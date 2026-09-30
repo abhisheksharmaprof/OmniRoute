@@ -16,6 +16,21 @@ if [ -f docker/ensure-docker-base-path.mjs ]; then
 fi
 
 DATA_PATH="${DATA_DIR:-/app/data}"
+if [ "$(id -u)" -eq 0 ]; then
+  # Railway mounts volumes as root. Correct the mount-point owner before
+  # dropping privileges; files the app creates afterward remain owned by node.
+  if [ -n "${RAILWAY_VOLUME_MOUNT_PATH:-}" ] && [ "$DATA_PATH" = "$RAILWAY_VOLUME_MOUNT_PATH" ]; then
+    chown node:node "$DATA_PATH"
+  fi
+
+  if [ -d "$DATA_PATH" ] && ! gosu node test -w "$DATA_PATH"; then
+    echo "WARNING: $DATA_PATH is not writable by the node user (UID 1000)."
+    echo "For a bind mount, set the host directory owner to UID/GID 1000."
+  fi
+
+  exec gosu node "$@"
+fi
+
 if [ -d "$DATA_PATH" ] && [ ! -w "$DATA_PATH" ]; then
   echo "WARNING: $DATA_PATH is not writable by the current user (UID $(id -u))."
   if [ "${CONTAINER_HOST:-}" = "podman" ]; then

@@ -12,7 +12,7 @@ RUN --mount=type=cache,id=s/d508ef9e-0289-4228-9ebd-ba8b67f2bbc6-apt-cache,targe
   --mount=type=cache,id=s/d508ef9e-0289-4228-9ebd-ba8b67f2bbc6-apt-lists,target=/var/lib/apt/lists,sharing=locked \
   apt-get update \
   && apt-get upgrade -y \
-  && apt-get install -y --no-install-recommends libsecret-1-0 ca-certificates \
+  && apt-get install -y --no-install-recommends libsecret-1-0 ca-certificates gosu \
   && rm -rf /var/lib/apt/lists/*
 
 # npm's *bundled* node_modules (brace-expansion, ip-address, tar, undici) are
@@ -278,16 +278,16 @@ COPY --chown=node:node --from=builder /app/scripts/dev/healthcheck.mjs ./healthc
 
 EXPOSE 20128
 
-# Drop to non-root before ENTRYPOINT/CMD so every derived stage (runner-cli,
-# runner-web) also runs as a non-root user unless they explicitly switch back.
-USER node
+# Start the entrypoint as root so it can fix Railway's root-owned volume mount.
+# scripts/check-permissions.sh immediately drops the application process to node.
+USER root
 
-# Warns if the mounted data volume has wrong ownership
+# Fixes Railway volume ownership, then drops the application to the node user.
 COPY --chmod=755 scripts/check-permissions.sh /app/check-permissions.sh
 ENTRYPOINT ["/app/check-permissions.sh"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["node", "healthcheck.mjs"]
+  CMD ["gosu", "node", "node", "healthcheck.mjs"]
 
 CMD ["node", "dev/run-standalone.mjs"]
 
@@ -331,7 +331,7 @@ RUN --mount=type=cache,id=s/d508ef9e-0289-4228-9ebd-ba8b67f2bbc6-apt-cache,targe
   && chown -R node:node /home/node/.cache \
   && rm -rf /var/lib/apt/lists/*
 
-USER node
+USER root
 
 FROM runner-base AS runner-cli
 
@@ -368,4 +368,4 @@ RUN --mount=type=cache,id=s/d508ef9e-0289-4228-9ebd-ba8b67f2bbc6-npm-cache,targe
     droid@0.212.0 \
     openclaw@2026.9.1
 
-USER node
+USER root
